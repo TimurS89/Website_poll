@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ site_title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body>
+    <main class="container">
+      <section class="card">
+        <h1>{{ headline }}</h1>
+        <p class="description">{{ description }}</p>
+
+        {% if error %}
+        <p class="message error">{{ error }}</p>
+        {% endif %}
+
+        <form action="{{ url_for('submit') }}" method="post" novalidate>
+          <fieldset>
+            <legend>{{ poll_question }}</legend>
+
+            {% for option in poll_options %}
+            <label class="poll-option">
+              <input
+                type="radio"
+                name="poll_answer"
+                value="{{ option }}"
+                {% if selected_poll_answer == option %}checked{% endif %}
+                required
+              />
+              <span>{{ option }}</span>
+            </label>
+            {% endfor %}
+          </fieldset>
+
+          <label for="email" class="input-label">Email</label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            placeholder="you@example.com"
+            value="{{ email or '' }}"
+            required
+          />
+
+          <button type="submit">Get Early Access</button>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>
