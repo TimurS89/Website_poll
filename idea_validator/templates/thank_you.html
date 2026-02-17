@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Thank You | {{ site_title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body>
+    <main class="container">
+      <section class="card thank-you-card">
+        <h1>Thank You!</h1>
+        <p>Your response has been recorded. We will reach out with updates soon.</p>
+        <a href="{{ url_for('index') }}" class="secondary-link">Back to landing page</a>
+      </section>
+    </main>
+  </body>
+</html>
