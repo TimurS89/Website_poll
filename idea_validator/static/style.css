@@ -135,6 +135,22 @@ button:hover {
   text-decoration: underline;
 }
 
+/* Styled link that looks like the submit button — used on the admin page. */
+.button-link {
+  display: inline-block;
+  border-radius: 10px;
+  padding: 12px 24px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  background: var(--accent);
+  text-decoration: none;
+}
+
+.button-link:hover {
+  background: var(--accent-hover);
+}
+
 @media (max-width: 560px) {
   .card {
     padding: 20px;

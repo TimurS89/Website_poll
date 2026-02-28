@@ -87,6 +87,7 @@ def page_context(extra: dict[str, Any] | None = None) -> dict[str, Any]:
     """Central place for template values from config.py.
 
     This keeps templates dynamic and makes project reuse simple.
+    To add a new config value: add it in config.py AND here.
     """
     context: dict[str, Any] = {
         "site_title": config.SITE_TITLE,
@@ -94,6 +95,9 @@ def page_context(extra: dict[str, Any] | None = None) -> dict[str, Any]:
         "description": config.DESCRIPTION,
         "poll_question": config.POLL_QUESTION,
         "poll_options": config.POLL_OPTIONS,
+        "submit_label": config.SUBMIT_LABEL,
+        "thank_you_title": config.THANK_YOU_TITLE,
+        "thank_you_message": config.THANK_YOU_MESSAGE,
     }
     if extra:
         context.update(extra)
@@ -184,6 +188,14 @@ def thank_you() -> str:
     return render_template("thank_you.html", **page_context())
 
 
+@app.route("/admin")
+def admin() -> str:
+    """Simple admin dashboard: shows submission count and a CSV download link."""
+    with get_db_connection() as connection:
+        total = connection.execute("SELECT COUNT(*) FROM submissions").fetchone()[0]
+    return render_template("admin.html", **page_context({"total": total}))
+
+
 @app.route("/admin/export")
 def admin_export() -> Response:
     """Download all submissions as CSV."""
@@ -219,9 +231,9 @@ def admin_export() -> Response:
     )
 
 
+# Initialise DB for both direct runs and WSGI servers (gunicorn, etc.).
+# init_db() is safe to call repeatedly — it uses CREATE TABLE IF NOT EXISTS.
+init_db()
+
 if __name__ == "__main__":
-    init_db()
     app.run(debug=True)
-else:
-    # Ensures database is ready when run by production servers (gunicorn, etc.).
-    init_db()

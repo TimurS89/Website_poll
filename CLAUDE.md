@@ -59,11 +59,14 @@ The **only file that needs to be edited** when repurposing the project for a
 new idea. Contains:
 
 ```python
-SITE_TITLE    # <title> and page heading
-HEADLINE      # large hero text
-DESCRIPTION   # subheading paragraph
-POLL_QUESTION # question shown above radio buttons
-POLL_OPTIONS  # list[str] of radio button labels
+SITE_TITLE        # <title> and page heading
+HEADLINE          # large hero text
+DESCRIPTION       # subheading paragraph
+POLL_QUESTION     # question shown above radio buttons
+POLL_OPTIONS      # list[str] of radio button labels
+SUBMIT_LABEL      # text on the submit button
+THANK_YOU_TITLE   # heading on the thank-you page
+THANK_YOU_MESSAGE # body text on the thank-you page
 ```
 
 All template values flow through `page_context()` in `app.py`; templates never
@@ -77,7 +80,7 @@ Core application. Key sections:
 - **`get_db_connection()`** — opens a new SQLite connection per request with
   `sqlite3.Row` factory for dict-style access.
 - **`page_context(extra)`** — single function that builds the Jinja2 template
-  context from `config.py`; add new config keys here and in `config.py`.
+  context from `config.py`; when adding a new config key, add it here too.
 - **`normalize_text()`** — strips whitespace; all user input passes through it.
 - **`is_valid_email()`** — basic regex `^[^\s@]+@[^\s@]+\.[^\s@]+$`; intentionally
   not strict.
@@ -86,15 +89,16 @@ Core application. Key sections:
 
 ### Routes
 
-| Route            | Method | Description                              |
-|------------------|--------|------------------------------------------|
-| `/`              | GET    | Landing page with form                   |
-| `/submit`        | POST   | Validates and stores submission          |
-| `/thank-you`     | GET    | Confirmation page                        |
-| `/admin/export`  | GET    | Downloads `submissions.csv`              |
+| Route            | Method | Description                                        |
+|------------------|--------|----------------------------------------------------|
+| `/`              | GET    | Landing page with form                             |
+| `/submit`        | POST   | Validates and stores submission                    |
+| `/thank-you`     | GET    | Confirmation page                                  |
+| `/admin`         | GET    | Dashboard: submission count + CSV download button  |
+| `/admin/export`  | GET    | Downloads `submissions.csv` directly               |
 
-The `/admin/export` route has **no authentication**. For a real deployment,
-add HTTP Basic Auth or a secret token before exposing this.
+The `/admin` and `/admin/export` routes have **no authentication**. For a real
+deployment, add HTTP Basic Auth or a secret token before exposing these.
 
 ---
 
