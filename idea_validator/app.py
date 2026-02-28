@@ -9,6 +9,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import os
 import re
 import sqlite3
 from datetime import datetime, timezone
@@ -98,6 +99,8 @@ def page_context(extra: dict[str, Any] | None = None) -> dict[str, Any]:
         "submit_label": config.SUBMIT_LABEL,
         "thank_you_title": config.THANK_YOU_TITLE,
         "thank_you_message": config.THANK_YOU_MESSAGE,
+        "site_url": config.SITE_URL,
+        "meta_description": config.META_DESCRIPTION,
     }
     if extra:
         context.update(extra)
@@ -231,9 +234,31 @@ def admin_export() -> Response:
     )
 
 
+@app.route("/robots.txt")
+def robots_txt() -> Response:
+    """Serve robots.txt and point crawlers at the sitemap."""
+    sitemap_url = f"{config.SITE_URL}/sitemap.xml" if config.SITE_URL else "/sitemap.xml"
+    body = f"User-agent: *\nAllow: /\nDisallow: /admin\nSitemap: {sitemap_url}\n"
+    return Response(body, mimetype="text/plain")
+
+
+@app.route("/sitemap.xml")
+def sitemap_xml() -> Response:
+    """Generate a minimal sitemap for the public landing page."""
+    base = config.SITE_URL or ""
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"  <url><loc>{base}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>\n"
+        "</urlset>"
+    )
+    return Response(body, mimetype="application/xml")
+
+
 # Initialise DB for both direct runs and WSGI servers (gunicorn, etc.).
 # init_db() is safe to call repeatedly — it uses CREATE TABLE IF NOT EXISTS.
 init_db()
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)

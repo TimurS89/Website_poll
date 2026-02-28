@@ -7,6 +7,16 @@ Every piece of user-facing text lives here — nothing is hardcoded in the HTML.
 # ── Page metadata ────────────────────────────────────────────────────────────
 SITE_TITLE = "Idea Validation"
 
+# ── SEO ───────────────────────────────────────────────────────────────────────
+# Set SITE_URL to your production domain (no trailing slash) after deployment.
+# Example: "https://myidea.onrender.com" or "https://www.mysite.com"
+SITE_URL = ""
+# Shown in Google search results snippets (150–160 characters recommended).
+META_DESCRIPTION = (
+    "Join our early access list and tell us which product direction matters most to you. "
+    "Help shape what we build next."
+)
+
 # ── Landing page text ─────────────────────────────────────────────────────────
 HEADLINE = "Validate your next product idea before building"
 DESCRIPTION = (
