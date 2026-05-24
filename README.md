@@ -55,12 +55,66 @@ python app.py
 
 Open: `http://127.0.0.1:5000`
 
+The development server runs with **debug OFF by default**. To enable Flask's
+auto-reloading debug server while developing (never in production), set
+`FLASK_DEBUG=1`:
+
+```bash
+# macOS / Linux
+FLASK_DEBUG=1 python app.py
+```
+
+```powershell
+# Windows PowerShell
+$env:FLASK_DEBUG = "1"; python app.py
+```
+
+## Configuration (environment variables)
+
+| Variable | Purpose |
+| --- | --- |
+| `SECRET_KEY` | Signs the session cookie; CSRF protection depends on it. Set a long random value in production so sessions survive restarts. |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | HTTP Basic Auth credentials for `/admin/export`. **If unset, the export endpoint is disabled (returns 503)** so the email list is never exposed by accident. |
+| `FLASK_DEBUG` | `1` enables the dev debug server. Never set in production. |
+| `TRUST_PROXY` | `1` when running behind a reverse proxy (Render/Railway/Nginx) so the real client IP is read from `X-Forwarded-For` for rate limiting. |
+| `SECURE_COOKIES` | `1` to mark the session cookie `Secure` (HTTPS deployments). |
+| `HOST` / `PORT` | Bind address/port for the dev server (default `127.0.0.1:5000`). |
+
+Generate a secret key:
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+## Run in production (Windows & Linux)
+
+Do **not** use `python app.py` in production — that launches the debug server.
+Serve the app with [waitress](https://github.com/Pylons/waitress), a pure-Python
+WSGI server that runs on both Windows and Linux:
+
+```bash
+# macOS / Linux
+export SECRET_KEY="<your-random-key>"
+export ADMIN_USERNAME="admin"
+export ADMIN_PASSWORD="<your-password>"
+export TRUST_PROXY=1
+waitress-serve --host=0.0.0.0 --port=8000 app:app
+```
+
+```powershell
+# Windows PowerShell
+$env:SECRET_KEY = "<your-random-key>"
+$env:ADMIN_USERNAME = "admin"
+$env:ADMIN_PASSWORD = "<your-password>"
+waitress-serve --host=0.0.0.0 --port=8000 app:app
+```
+
 ## Routes
 
 - `/` → landing page
-- `/submit` → POST form handler
+- `/submit` → POST form handler (CSRF-protected, rate limited)
 - `/thank-you` → success page
-- `/admin/export` → download CSV of submissions
+- `/admin/export` → download CSV of submissions (**requires HTTP Basic Auth**; disabled until `ADMIN_USERNAME`/`ADMIN_PASSWORD` are set)
 
 ## Reuse for another idea
 
@@ -86,10 +140,11 @@ pip install -r requirements.txt
 - Start command:
 
 ```bash
-python app.py
+waitress-serve --host=0.0.0.0 --port=$PORT app:app
 ```
 
-Set root directory to `idea_validator`.
+- Set root directory to `idea_validator`.
+- In the dashboard, set env vars: `SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `TRUST_PROXY=1`.
 
 ### Railway
 
@@ -98,8 +153,10 @@ Set root directory to `idea_validator`.
 - Start command:
 
 ```bash
-python app.py
+waitress-serve --host=0.0.0.0 --port=$PORT app:app
 ```
+
+- Set env vars: `SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `TRUST_PROXY=1`.
 
 ## Notes
 
@@ -109,6 +166,10 @@ python app.py
 - Basic email regex validation is included.
 - Input is normalized and validated server-side.
 - New signups are logged to console.
+- The signup form is CSRF-protected with a per-session token.
+- `/submit` is rate limited (5/min, 50/day per IP); `/admin/export` is rate limited (20/hour) and requires HTTP Basic Auth.
+- Security headers (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`) are sent on every response.
+- The debug server is disabled unless `FLASK_DEBUG=1`, so production never exposes the interactive debugger.
 
 ## Git branch note
 
