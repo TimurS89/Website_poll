@@ -125,7 +125,130 @@ button:hover {
   text-align: center;
 }
 
+/* Poll results reveal */
+.results {
+  text-align: left;
+  margin: 24px 0 8px;
+}
+
+.results-title {
+  font-size: 1.05rem;
+  margin: 0 0 14px;
+}
+
+.result-row {
+  margin-bottom: 14px;
+}
+
+.result-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 0.95rem;
+}
+
+.result-pct {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.result-bar {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  height: 12px;
+  overflow: hidden;
+}
+
+.result-fill {
+  height: 100%;
+  background: var(--border);
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+
+.result-row.is-choice .result-fill {
+  background: var(--accent);
+}
+
+.result-row.is-choice .result-pct {
+  color: var(--accent);
+}
+
+.you-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.results-total {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* Share + community */
+.share {
+  margin-top: 24px;
+}
+
+.share-title {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.share-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+.share-btn {
+  flex: 1 1 auto;
+  min-width: 88px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.share-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.community-btn {
+  display: block;
+  margin-top: 18px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: white;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.community-btn:hover {
+  background: var(--accent-hover);
+}
+
 .secondary-link {
+  display: inline-block;
+  margin-top: 18px;
   color: var(--accent);
   text-decoration: none;
   font-weight: 600;

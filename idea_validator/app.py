@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlencode
 
 from flask import (
     Flask,
@@ -42,9 +43,14 @@ from flask import (
 )
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from PIL import Image, ImageDraw, ImageFont
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 import config
+
+# Attribution columns captured from UTM params / referrer so we can later tell
+# which channel drove each signup.
+ATTRIBUTION_COLUMNS = ("utm_source", "utm_medium", "utm_campaign", "referrer")
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "database.db"
@@ -107,7 +113,7 @@ def get_db_connection() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    """Create the submissions table if it does not already exist."""
+    """Create the submissions table, and add attribution columns if missing."""
     with get_db_connection() as connection:
         connection.execute(
             """
@@ -115,10 +121,20 @@ def init_db() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 email TEXT UNIQUE NOT NULL,
                 poll_answer TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                utm_source TEXT,
+                utm_medium TEXT,
+                utm_campaign TEXT,
+                referrer TEXT
             )
             """
         )
+        # Migrate databases created before attribution tracking was added.
+        existing = {row["name"] for row in connection.execute("PRAGMA table_info(submissions)")}
+        for column in ATTRIBUTION_COLUMNS:
+            if column not in existing:
+                # Column names come from a fixed internal tuple, so this is safe.
+                connection.execute(f"ALTER TABLE submissions ADD COLUMN {column} TEXT")
         connection.commit()
 
 
@@ -144,6 +160,60 @@ def csv_safe(value: str) -> str:
     if value and value[0] in ("=", "+", "-", "@"):
         return f"'{value}"
     return value
+
+
+def capture_attribution() -> None:
+    """Record first-touch UTM params / referrer in the session.
+
+    Stored once per session so we keep the original source even if the visitor
+    later reloads the page without the campaign parameters.
+    """
+    if "attribution" in session:
+        return
+    attribution = {
+        "utm_source": request.args.get("utm_source", "")[:128],
+        "utm_medium": request.args.get("utm_medium", "")[:128],
+        "utm_campaign": request.args.get("utm_campaign", "")[:128],
+        "referrer": (request.referrer or "")[:256],
+    }
+    if any(attribution.values()):
+        session["attribution"] = attribution
+
+
+def get_poll_results() -> tuple[dict[str, int], int]:
+    """Return a {option: count} map and the total number of votes."""
+    with get_db_connection() as connection:
+        rows = connection.execute(
+            "SELECT poll_answer, COUNT(*) AS count FROM submissions GROUP BY poll_answer"
+        ).fetchall()
+    counts = {row["poll_answer"]: row["count"] for row in rows}
+    return counts, sum(counts.values())
+
+
+def build_share_links(page_url: str, message: str) -> dict[str, str]:
+    """Build pre-filled share-intent URLs (no APIs/keys required).
+
+    Each share URL carries UTM parameters so traffic coming back from a share is
+    attributed to the platform it came from.
+    """
+
+    def tagged(medium: str) -> str:
+        separator = "&" if "?" in page_url else "?"
+        params = urlencode(
+            {"utm_source": "share", "utm_medium": medium, "utm_campaign": "waitlist"}
+        )
+        return f"{page_url}{separator}{params}"
+
+    return {
+        "twitter": "https://twitter.com/intent/tweet?"
+        + urlencode({"text": message, "url": tagged("twitter")}),
+        "linkedin": "https://www.linkedin.com/sharing/share-offsite/?"
+        + urlencode({"url": tagged("linkedin")}),
+        "whatsapp": "https://wa.me/?"
+        + urlencode({"text": f"{message} {tagged('whatsapp')}"}),
+        "telegram": "https://t.me/share/url?"
+        + urlencode({"url": tagged("telegram"), "text": message}),
+    }
 
 
 def get_csrf_token() -> str:
@@ -222,6 +292,7 @@ def page_context(extra: dict[str, Any] | None = None) -> dict[str, Any]:
 @app.route("/")
 def index() -> str:
     """Landing page route."""
+    capture_attribution()
     return render_template("index.html", **page_context())
 
 
@@ -284,15 +355,25 @@ def submit() -> Response | tuple[str, int] | str:
         )
 
     created_at = datetime.now(timezone.utc).isoformat()
+    attribution = session.get("attribution", {})
 
     try:
         with get_db_connection() as connection:
             connection.execute(
                 """
-                INSERT INTO submissions (email, poll_answer, created_at)
-                VALUES (?, ?, ?)
+                INSERT INTO submissions
+                    (email, poll_answer, created_at, utm_source, utm_medium, utm_campaign, referrer)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (email, poll_answer, created_at),
+                (
+                    email,
+                    poll_answer,
+                    created_at,
+                    attribution.get("utm_source", ""),
+                    attribution.get("utm_medium", ""),
+                    attribution.get("utm_campaign", ""),
+                    attribution.get("referrer", ""),
+                ),
             )
             connection.commit()
     except sqlite3.IntegrityError:
@@ -307,13 +388,41 @@ def submit() -> Response | tuple[str, int] | str:
         )
 
     logger.info("New signup: email=%s poll_answer=%s at=%s", email, poll_answer, created_at)
+    # Remember the choice so the thank-you page can highlight it in the results.
+    session["last_poll_answer"] = poll_answer
     return redirect(url_for("thank_you"))
 
 
 @app.route("/thank-you")
 def thank_you() -> str:
-    """Simple confirmation page after successful submission."""
-    return render_template("thank_you.html", **page_context())
+    """Confirmation page with live poll results, share links, and community link."""
+    user_choice = session.pop("last_poll_answer", None)
+
+    counts, total = get_poll_results()
+    poll_results = [
+        {
+            "option": option,
+            "count": counts.get(option, 0),
+            "percent": round(counts.get(option, 0) / total * 100) if total else 0,
+            "is_user_choice": option == user_choice,
+        }
+        for option in config.POLL_OPTIONS
+    ]
+
+    page_url = url_for("index", _external=True)
+    message = config.SHARE_MESSAGE
+    if user_choice:
+        message = f'I picked "{user_choice}". {config.SHARE_MESSAGE}'
+
+    extra = {
+        "poll_results": poll_results,
+        "total_votes": total,
+        "user_choice": user_choice,
+        "share_links": build_share_links(page_url, message),
+        "community_url": config.COMMUNITY_URL,
+        "community_label": config.COMMUNITY_LABEL,
+    }
+    return render_template("thank_you.html", **page_context(extra))
 
 
 @app.route("/admin/export")
@@ -323,12 +432,26 @@ def admin_export() -> Response:
     """Download all submissions as CSV (protected by HTTP Basic Auth)."""
     with get_db_connection() as connection:
         submissions = connection.execute(
-            "SELECT id, email, poll_answer, created_at FROM submissions ORDER BY created_at DESC"
+            """
+            SELECT id, email, poll_answer, created_at, utm_source, utm_medium, utm_campaign, referrer
+            FROM submissions ORDER BY created_at DESC
+            """
         ).fetchall()
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["id", "email", "poll_answer", "created_at"])
+    writer.writerow(
+        [
+            "id",
+            "email",
+            "poll_answer",
+            "created_at",
+            "utm_source",
+            "utm_medium",
+            "utm_campaign",
+            "referrer",
+        ]
+    )
 
     for row in submissions:
         writer.writerow(
@@ -337,6 +460,10 @@ def admin_export() -> Response:
                 csv_safe(row["email"]),
                 csv_safe(row["poll_answer"]),
                 csv_safe(row["created_at"]),
+                csv_safe(row["utm_source"] or ""),
+                csv_safe(row["utm_medium"] or ""),
+                csv_safe(row["utm_campaign"] or ""),
+                csv_safe(row["referrer"] or ""),
             ]
         )
 
@@ -350,6 +477,64 @@ def admin_export() -> Response:
             "Content-Disposition": "attachment; filename=submissions.csv",
             "X-Total-Submissions": str(len(submissions)),
         },
+    )
+
+
+def _load_font(size: int) -> Any:
+    """Load a TrueType font (common Windows/Linux names) with a scalable fallback."""
+    for name in ("DejaVuSans.ttf", "Arial.ttf", "arial.ttf"):
+        try:
+            return ImageFont.truetype(name, size)
+        except OSError:
+            continue
+    return ImageFont.load_default(size=size)
+
+
+def _wrap_text(draw: ImageDraw.ImageDraw, text: str, font: Any, max_width: int) -> list[str]:
+    """Word-wrap text to fit within max_width pixels for the given font."""
+    lines: list[str] = []
+    current = ""
+    for word in text.split():
+        candidate = f"{current} {word}".strip()
+        if not current or draw.textlength(candidate, font=font) <= max_width:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines
+
+
+@app.route("/og-image.png")
+def og_image() -> Response:
+    """Render a 1200x630 social-share image from the config values."""
+    width, height, padding = 1200, 630, 90
+    image = Image.new("RGB", (width, height), "#ffffff")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((0, 0, 18, height), fill="#2563eb")  # accent bar
+
+    draw.text((padding, 78), config.SITE_TITLE.upper(), font=_load_font(30), fill="#2563eb")
+
+    headline_font = _load_font(64)
+    y = 168
+    for line in _wrap_text(draw, config.HEADLINE, headline_font, width - padding * 2)[:4]:
+        draw.text((padding, y), line, font=headline_font, fill="#1f2937")
+        y += 84
+
+    draw.text(
+        (padding, height - 110),
+        "Join the early-access waitlist",
+        font=_load_font(32),
+        fill="#4b5563",
+    )
+
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return Response(
+        buffer.getvalue(),
+        mimetype="image/png",
+        headers={"Cache-Control": "public, max-age=86400"},
     )
 
 

@@ -111,9 +111,10 @@ waitress-serve --host=0.0.0.0 --port=8000 app:app
 
 ## Routes
 
-- `/` → landing page
+- `/` → landing page (Open Graph / Twitter share cards in the `<head>`)
 - `/submit` → POST form handler (CSRF-protected, rate limited)
-- `/thank-you` → success page
+- `/thank-you` → success page with live poll results, social share buttons, and an optional community link
+- `/og-image.png` → 1200×630 social-share image generated on the fly from `config.py`
 - `/admin/export` → download CSV of submissions (**requires HTTP Basic Auth**; disabled until `ADMIN_USERNAME`/`ADMIN_PASSWORD` are set)
 
 ## Reuse for another idea
@@ -124,8 +125,10 @@ Duplicate `idea_validator/` and edit only `config.py`:
 - `DESCRIPTION`
 - `POLL_QUESTION`
 - `POLL_OPTIONS`
+- `COMMUNITY_URL` / `COMMUNITY_LABEL` (optional button on the thank-you page; leave the URL blank to hide it)
+- `SHARE_MESSAGE` (text pre-filled in social share links)
 
-Everything in the HTML reads from these values dynamically.
+Everything in the HTML and the generated share image reads from these values dynamically.
 
 ## Simple deployment
 
@@ -170,6 +173,9 @@ waitress-serve --host=0.0.0.0 --port=$PORT app:app
 - `/submit` is rate limited (5/min, 50/day per IP); `/admin/export` is rate limited (20/hour) and requires HTTP Basic Auth.
 - Security headers (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`) are sent on every response.
 - The debug server is disabled unless `FLASK_DEBUG=1`, so production never exposes the interactive debugger.
+- The thank-you page reveals live poll results (the visitor's own pick is highlighted) and offers X/LinkedIn/WhatsApp/Telegram share links.
+- First-touch attribution (`utm_source`, `utm_medium`, `utm_campaign`, `referrer`) is captured per visitor and included in the CSV export. Share links carry UTM tags so returning traffic is attributed to its platform.
+- Existing databases are migrated automatically: the attribution columns are added on startup if missing.
 
 ## Git branch note
 

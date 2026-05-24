@@ -11,6 +11,48 @@
       <section class="card thank-you-card">
         <h1>Thank You!</h1>
         <p>Your response has been recorded. We will reach out with updates soon.</p>
+
+        {% if total_votes %}
+        <div class="results">
+          <h2 class="results-title">{{ poll_question }}</h2>
+          {% for result in poll_results %}
+          <div class="result-row {% if result.is_user_choice %}is-choice{% endif %}">
+            <div class="result-head">
+              <span class="result-label">
+                {{ result.option }}
+                {% if result.is_user_choice %}<span class="you-tag">your pick</span>{% endif %}
+              </span>
+              <span class="result-pct">{{ result.percent }}%</span>
+            </div>
+            <div class="result-bar">
+              <div class="result-fill" style="width: {{ result.percent }}%"></div>
+            </div>
+          </div>
+          {% endfor %}
+          <p class="results-total">
+            {{ total_votes }} response{{ '' if total_votes == 1 else 's' }} so far
+          </p>
+        </div>
+        {% endif %}
+
+        {% if share_links %}
+        <div class="share">
+          <p class="share-title">Know someone who'd want this? Spread the word.</p>
+          <div class="share-buttons">
+            <a class="share-btn" href="{{ share_links.twitter }}" target="_blank" rel="noopener">X</a>
+            <a class="share-btn" href="{{ share_links.linkedin }}" target="_blank" rel="noopener">LinkedIn</a>
+            <a class="share-btn" href="{{ share_links.whatsapp }}" target="_blank" rel="noopener">WhatsApp</a>
+            <a class="share-btn" href="{{ share_links.telegram }}" target="_blank" rel="noopener">Telegram</a>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if community_url %}
+        <a class="community-btn" href="{{ community_url }}" target="_blank" rel="noopener">
+          {{ community_label }}
+        </a>
+        {% endif %}
+
         <a href="{{ url_for('index') }}" class="secondary-link">Back to landing page</a>
       </section>
     </main>
