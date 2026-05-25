@@ -19,6 +19,7 @@ Environment variables (set these in production):
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import logging
 import os
@@ -29,7 +30,7 @@ from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from flask import (
     Flask,
@@ -162,8 +163,25 @@ def csv_safe(value: str) -> str:
     return value
 
 
+def email_fingerprint(email: str) -> str:
+    """Short, non-reversible identifier for logs so raw emails never hit log files."""
+    return hashlib.sha256(email.encode("utf-8")).hexdigest()[:12]
+
+
+def _referrer_origin() -> str:
+    """Return only scheme://host of the referrer.
+
+    The path and query string are dropped because they can carry PII from the
+    referring page; we only need to know which site sent the visitor.
+    """
+    parts = urlsplit(request.referrer or "")
+    if parts.scheme in ("http", "https") and parts.netloc:
+        return f"{parts.scheme}://{parts.netloc}"[:256]
+    return ""
+
+
 def capture_attribution() -> None:
-    """Record first-touch UTM params / referrer in the session.
+    """Record first-touch UTM params / referrer origin in the session.
 
     Stored once per session so we keep the original source even if the visitor
     later reloads the page without the campaign parameters.
@@ -174,7 +192,7 @@ def capture_attribution() -> None:
         "utm_source": request.args.get("utm_source", "")[:128],
         "utm_medium": request.args.get("utm_medium", "")[:128],
         "utm_campaign": request.args.get("utm_campaign", "")[:128],
-        "referrer": (request.referrer or "")[:256],
+        "referrer": _referrer_origin(),
     }
     if any(attribution.values()):
         session["attribution"] = attribution
@@ -376,18 +394,17 @@ def submit() -> Response | tuple[str, int] | str:
                 ),
             )
             connection.commit()
-    except sqlite3.IntegrityError:
-        return render_template(
-            "index.html",
-            **page_context(
-                {
-                    "error": "This email is already registered. Thanks for your interest!",
-                    **form_values,
-                }
-            ),
+        logger.info(
+            "New signup: email_hash=%s poll_answer=%s at=%s",
+            email_fingerprint(email),
+            poll_answer,
+            created_at,
         )
+    except sqlite3.IntegrityError:
+        # Email already on the list. Respond exactly like a brand-new signup so this
+        # endpoint can't be used to probe which emails are already registered.
+        pass
 
-    logger.info("New signup: email=%s poll_answer=%s at=%s", email, poll_answer, created_at)
     # Remember the choice so the thank-you page can highlight it in the results.
     session["last_poll_answer"] = poll_answer
     return redirect(url_for("thank_you"))
@@ -506,9 +523,14 @@ def _wrap_text(draw: ImageDraw.ImageDraw, text: str, font: Any, max_width: int) 
     return lines
 
 
-@app.route("/og-image.png")
-def og_image() -> Response:
-    """Render a 1200x630 social-share image from the config values."""
+# The share image depends only on config values, which are fixed at runtime, so we
+# render it once and serve the cached bytes thereafter. This stops the public,
+# unauthenticated endpoint from doing image work (and re-reading fonts) on every hit.
+_og_image_bytes: bytes | None = None
+
+
+def _render_og_image() -> bytes:
+    """Render the 1200x630 social-share image from the config values."""
     width, height, padding = 1200, 630, 90
     image = Image.new("RGB", (width, height), "#ffffff")
     draw = ImageDraw.Draw(image)
@@ -531,8 +553,17 @@ def og_image() -> Response:
 
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+@app.route("/og-image.png")
+def og_image() -> Response:
+    """Serve the cached social-share image (rendered once, on first request)."""
+    global _og_image_bytes
+    if _og_image_bytes is None:
+        _og_image_bytes = _render_og_image()
     return Response(
-        buffer.getvalue(),
+        _og_image_bytes,
         mimetype="image/png",
         headers={"Cache-Control": "public, max-age=86400"},
     )
@@ -552,12 +583,34 @@ def handle_rate_limit(_error: Any) -> tuple[str, int]:
     )
 
 
+# Content Security Policy: scripts, objects, base, and form targets are locked to the
+# same origin. 'unsafe-inline' is allowed for styles only because the results bar sets
+# its width via an inline style attribute; scripts get no such exception. Tighten with
+# nonces if you ever add inline scripts.
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "img-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "script-src 'self'; "
+    "base-uri 'self'; "
+    "form-action 'self'; "
+    "frame-ancestors 'self'; "
+    "object-src 'none'"
+)
+
+
 @app.after_request
 def set_security_headers(response: Response) -> Response:
     """Conservative security headers applied to every response."""
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+    # Assert HSTS only over HTTPS so it is never sent during local HTTP development.
+    if request.is_secure:
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
     return response
 
 
