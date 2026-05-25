@@ -4,6 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{{ site_title }}</title>
+    <meta name="description" content="{{ description }}" />
+
+    <!-- Open Graph / social share cards -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="{{ headline }}" />
+    <meta property="og:description" content="{{ description }}" />
+    <meta property="og:url" content="{{ url_for('index', _external=True) }}" />
+    <meta property="og:image" content="{{ url_for('og_image', _external=True) }}" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="{{ headline }}" />
+    <meta name="twitter:description" content="{{ description }}" />
+    <meta name="twitter:image" content="{{ url_for('og_image', _external=True) }}" />
+
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
   </head>
   <body>
@@ -17,6 +32,7 @@
         {% endif %}
 
         <form action="{{ url_for('submit') }}" method="post" novalidate>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
           <fieldset>
             <legend>{{ poll_question }}</legend>
 

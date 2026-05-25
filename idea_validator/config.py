@@ -16,3 +16,11 @@ POLL_OPTIONS = [
     "Analytics dashboard",
     "Mobile-friendly experience",
 ]
+
+# Optional community link shown on the thank-you page (Discord/Telegram/Slack/etc.).
+# Leave blank to hide the button entirely.
+COMMUNITY_URL = ""
+COMMUNITY_LABEL = "Join the community"
+
+# Message pre-filled when visitors share the page on social platforms.
+SHARE_MESSAGE = "I just joined the early-access list — take a look:"
