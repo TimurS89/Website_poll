@@ -27,6 +27,10 @@
         <h1>{{ headline }}</h1>
         <p class="description">{{ description }}</p>
 
+        <p class="social-proof">
+          <span class="social-proof-count">{{ participant_label }}</span> people have already joined
+        </p>
+
         {% if error %}
         <p class="message error">{{ error }}</p>
         {% endif %}

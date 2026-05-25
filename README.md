@@ -127,6 +127,8 @@ Duplicate `idea_validator/` and edit only `config.py`:
 - `POLL_OPTIONS`
 - `COMMUNITY_URL` / `COMMUNITY_LABEL` (optional button on the thank-you page; leave the URL blank to hide it)
 - `SHARE_MESSAGE` (text pre-filled in social share links)
+- `PARTICIPANT_BASELINE` (social-proof floor; the counter shows e.g. "1,000+" until real sign-ups overtake it, then the true live number — set to `0` to show only real counts)
+- `RESULTS_MIN_VOTES` (poll result bars appear only after this many real votes)
 
 Everything in the HTML and the generated share image reads from these values dynamically.
 
@@ -175,6 +177,7 @@ waitress-serve --host=0.0.0.0 --port=$PORT app:app
 - Security headers are sent on every response: `Content-Security-Policy`, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and `Strict-Transport-Security` (HSTS, only over HTTPS).
 - The debug server is disabled unless `FLASK_DEBUG=1`, so production never exposes the interactive debugger.
 - The thank-you page reveals live poll results (the visitor's own pick is highlighted) and offers X/LinkedIn/WhatsApp/Telegram share links.
+- A social-proof counter on both pages uses the floor model `max(PARTICIPANT_BASELINE, real signups)`: it reads "1,000+" until real sign-ups overtake the baseline, then switches to the true number automatically. Poll percentages are always computed from real votes only (the seeded number never feeds them), and the raw vote count is not displayed, so the two never contradict each other.
 - First-touch attribution (`utm_source`, `utm_medium`, `utm_campaign`, and the `referrer` origin — scheme + host only, no path or query string) is captured per visitor and included in the CSV export. Share links carry UTM tags so returning traffic is attributed to its platform.
 - Existing databases are migrated automatically: the attribution columns are added on startup if missing.
 

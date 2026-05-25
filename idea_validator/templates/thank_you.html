@@ -12,7 +12,11 @@
         <h1>Thank You!</h1>
         <p>Your response has been recorded. We will reach out with updates soon.</p>
 
-        {% if total_votes %}
+        <p class="social-proof">
+          <span class="social-proof-count">{{ participant_label }}</span> people are on board
+        </p>
+
+        {% if show_results %}
         <div class="results">
           <h2 class="results-title">{{ poll_question }}</h2>
           {% for result in poll_results %}
@@ -29,9 +33,6 @@
             </div>
           </div>
           {% endfor %}
-          <p class="results-total">
-            {{ total_votes }} response{{ '' if total_votes == 1 else 's' }} so far
-          </p>
         </div>
         {% endif %}
 

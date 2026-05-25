@@ -50,6 +50,32 @@ h1 {
   line-height: 1.5;
 }
 
+.social-proof {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 20px;
+  padding: 7px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.social-proof::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.social-proof-count {
+  font-weight: 700;
+  color: var(--text);
+}
+
 fieldset {
   border: 0;
   padding: 0;
