@@ -165,16 +165,17 @@ waitress-serve --host=0.0.0.0 --port=$PORT app:app
 
 - SQLite table `submissions` is auto-created if missing.
 - `database.db` is intentionally not committed to git (SQLite is a binary file); it is created automatically on first run.
-- Duplicate emails are blocked (`email` is unique).
+- Duplicate emails are blocked (`email` is unique). Re-submitting an existing email returns the same thank-you page rather than revealing that it is already registered (prevents email enumeration).
 - Basic email regex validation is included.
 - Input is normalized and validated server-side.
-- New signups are logged to console.
+- New signups are logged to console with a hashed email fingerprint; raw email addresses are never written to logs.
 - The signup form is CSRF-protected with a per-session token.
 - `/submit` is rate limited (5/min, 50/day per IP); `/admin/export` is rate limited (20/hour) and requires HTTP Basic Auth.
-- Security headers (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`) are sent on every response.
+- The `/og-image.png` share image is rendered once and cached in memory, so the public endpoint does no per-request image work.
+- Security headers are sent on every response: `Content-Security-Policy`, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and `Strict-Transport-Security` (HSTS, only over HTTPS).
 - The debug server is disabled unless `FLASK_DEBUG=1`, so production never exposes the interactive debugger.
 - The thank-you page reveals live poll results (the visitor's own pick is highlighted) and offers X/LinkedIn/WhatsApp/Telegram share links.
-- First-touch attribution (`utm_source`, `utm_medium`, `utm_campaign`, `referrer`) is captured per visitor and included in the CSV export. Share links carry UTM tags so returning traffic is attributed to its platform.
+- First-touch attribution (`utm_source`, `utm_medium`, `utm_campaign`, and the `referrer` origin — scheme + host only, no path or query string) is captured per visitor and included in the CSV export. Share links carry UTM tags so returning traffic is attributed to its platform.
 - Existing databases are migrated automatically: the attribution columns are added on startup if missing.
 
 ## Git branch note
