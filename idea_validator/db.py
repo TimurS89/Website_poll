@@ -149,17 +149,6 @@ def poll_counts() -> dict[str, int]:
         connection.close()
 
 
-def count_submissions() -> int:
-    """Total number of submissions (one row per email)."""
-    connection = _connect()
-    try:
-        cursor = connection.cursor()
-        cursor.execute("SELECT COUNT(*) AS count FROM submissions")
-        return int(cursor.fetchone()["count"])
-    finally:
-        connection.close()
-
-
 def all_submissions() -> list[dict[str, Any]]:
     """All submissions as dicts, newest first (for CSV export)."""
     connection = _connect()

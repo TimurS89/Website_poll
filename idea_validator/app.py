@@ -28,6 +28,7 @@ import logging
 import os
 import re
 import secrets
+import time
 from datetime import datetime, timezone
 from functools import wraps
 from typing import Any, Callable
@@ -156,13 +157,32 @@ def capture_attribution() -> None:
         session["attribution"] = attribution
 
 
+# Poll counts power both the social-proof counter (their sum) and the thank-you
+# result bars, and they're read on every page render (via a context processor).
+# Cache them briefly so public, unauthenticated page views don't hit the database
+# on every request — a few seconds of staleness is irrelevant for social proof and
+# aggregate results.
+_POLL_CACHE_TTL_SECONDS = 60.0
+_poll_cache: dict[str, Any] = {"counts": {}, "at": 0.0}
+
+
+def cached_poll_counts() -> dict[str, int]:
+    """Return {poll_answer: count}, cached for a short TTL."""
+    now = time.monotonic()
+    if now - _poll_cache["at"] > _POLL_CACHE_TTL_SECONDS:
+        _poll_cache["counts"] = db.poll_counts()
+        _poll_cache["at"] = now
+    return _poll_cache["counts"]
+
+
 def participant_label() -> str:
     """Social-proof count using the floor model: max(baseline, real signups).
 
     Reads "1,000+" while the baseline floors the real count, then switches to the
-    exact live number (no "+") once real sign-ups overtake the baseline.
+    exact live number (no "+") once real sign-ups overtake the baseline. The real
+    count is the sum of poll answers (every submission has exactly one).
     """
-    real = db.count_submissions()
+    real = sum(cached_poll_counts().values())
     baseline = config.PARTICIPANT_BASELINE
     if real >= baseline:
         return f"{real:,}"
@@ -363,7 +383,7 @@ def thank_you() -> str:
     """Confirmation page with live poll results, share links, and community link."""
     user_choice = session.pop("last_poll_answer", None)
 
-    counts = db.poll_counts()
+    counts = cached_poll_counts()
     total = sum(counts.values())
     poll_results = [
         {
