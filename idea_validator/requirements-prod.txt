@@ -1,0 +1,5 @@
+# Production dependencies: everything in requirements.txt plus the PostgreSQL driver.
+# Local development uses SQLite and only needs requirements.txt (no psycopg, so it
+# installs cleanly on any Python version, including bleeding-edge ones on Windows).
+-r requirements.txt
+psycopg[binary]==3.3.4

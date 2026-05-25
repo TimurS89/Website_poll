@@ -1,0 +1,28 @@
+# Render Blueprint. Deploy with: Render dashboard -> New + -> Blueprint -> pick this repo.
+# You'll be prompted for the values marked `sync: false` (ADMIN_USERNAME,
+# ADMIN_PASSWORD, DATABASE_URL). SECRET_KEY is generated automatically.
+services:
+  - type: web
+    name: idea-validator
+    runtime: python
+    plan: free
+    rootDir: idea_validator
+    buildCommand: pip install -r requirements-prod.txt
+    startCommand: waitress-serve --host=0.0.0.0 --port=$PORT app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      # Postgres connection string from Neon (postgresql://...?sslmode=require).
+      # When set, the app uses Postgres; if unset it falls back to local SQLite.
+      - key: DATABASE_URL
+        sync: false
+      - key: TRUST_PROXY
+        value: "1"
+      - key: SECURE_COOKIES
+        value: "1"

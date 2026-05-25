@@ -13,6 +13,9 @@ Environment variables (set these in production):
   TRUST_PROXY     "1" when running behind a reverse proxy (Render/Railway/Nginx)
                   so the real client IP is read from X-Forwarded-For.
   SECURE_COOKIES  "1" to mark the session cookie Secure (HTTPS deployments).
+  DATABASE_URL    PostgreSQL connection string (e.g. Neon). When set, the app uses
+                  Postgres; if unset it falls back to a local SQLite file.
+  DATABASE_PATH   Override the local SQLite file location (SQLite mode only).
   HOST / PORT     Bind address for the built-in dev server (defaults 127.0.0.1:5000).
 """
 
@@ -25,10 +28,8 @@ import logging
 import os
 import re
 import secrets
-import sqlite3
 from datetime import datetime, timezone
 from functools import wraps
-from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlencode, urlsplit
 
@@ -48,13 +49,7 @@ from PIL import Image, ImageDraw, ImageFont
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 import config
-
-# Attribution columns captured from UTM params / referrer so we can later tell
-# which channel drove each signup.
-ATTRIBUTION_COLUMNS = ("utm_source", "utm_medium", "utm_campaign", "referrer")
-
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "database.db"
+import db
 
 # Basic email regex (simple and beginner-friendly, not overly strict).
 EMAIL_REGEX = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -100,43 +95,6 @@ limiter = Limiter(
     app=app,
     storage_uri="memory://",
 )
-
-
-def get_db_connection() -> sqlite3.Connection:
-    """Create a new SQLite connection.
-
-    We use sqlite3.Row so rows can be accessed like dictionaries
-    (e.g., row["email"]) which is easier to read.
-    """
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    return connection
-
-
-def init_db() -> None:
-    """Create the submissions table, and add attribution columns if missing."""
-    with get_db_connection() as connection:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS submissions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT UNIQUE NOT NULL,
-                poll_answer TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                utm_source TEXT,
-                utm_medium TEXT,
-                utm_campaign TEXT,
-                referrer TEXT
-            )
-            """
-        )
-        # Migrate databases created before attribution tracking was added.
-        existing = {row["name"] for row in connection.execute("PRAGMA table_info(submissions)")}
-        for column in ATTRIBUTION_COLUMNS:
-            if column not in existing:
-                # Column names come from a fixed internal tuple, so this is safe.
-                connection.execute(f"ALTER TABLE submissions ADD COLUMN {column} TEXT")
-        connection.commit()
 
 
 def normalize_text(value: str) -> str:
@@ -198,30 +156,13 @@ def capture_attribution() -> None:
         session["attribution"] = attribution
 
 
-def get_poll_results() -> tuple[dict[str, int], int]:
-    """Return a {option: count} map and the total number of votes."""
-    with get_db_connection() as connection:
-        rows = connection.execute(
-            "SELECT poll_answer, COUNT(*) AS count FROM submissions GROUP BY poll_answer"
-        ).fetchall()
-    counts = {row["poll_answer"]: row["count"] for row in rows}
-    return counts, sum(counts.values())
-
-
-def count_submissions() -> int:
-    """Total real submissions (one row per email)."""
-    with get_db_connection() as connection:
-        row = connection.execute("SELECT COUNT(*) AS count FROM submissions").fetchone()
-    return int(row["count"])
-
-
 def participant_label() -> str:
     """Social-proof count using the floor model: max(baseline, real signups).
 
     Reads "1,000+" while the baseline floors the real count, then switches to the
     exact live number (no "+") once real sign-ups overtake the baseline.
     """
-    real = count_submissions()
+    real = db.count_submissions()
     baseline = config.PARTICIPANT_BASELINE
     if real >= baseline:
         return f"{real:,}"
@@ -401,35 +342,16 @@ def submit() -> Response | tuple[str, int] | str:
     created_at = datetime.now(timezone.utc).isoformat()
     attribution = session.get("attribution", {})
 
-    try:
-        with get_db_connection() as connection:
-            connection.execute(
-                """
-                INSERT INTO submissions
-                    (email, poll_answer, created_at, utm_source, utm_medium, utm_campaign, referrer)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    email,
-                    poll_answer,
-                    created_at,
-                    attribution.get("utm_source", ""),
-                    attribution.get("utm_medium", ""),
-                    attribution.get("utm_campaign", ""),
-                    attribution.get("referrer", ""),
-                ),
-            )
-            connection.commit()
+    if db.insert_submission(email, poll_answer, created_at, attribution):
         logger.info(
             "New signup: email_hash=%s poll_answer=%s at=%s",
             email_fingerprint(email),
             poll_answer,
             created_at,
         )
-    except sqlite3.IntegrityError:
-        # Email already on the list. Respond exactly like a brand-new signup so this
-        # endpoint can't be used to probe which emails are already registered.
-        pass
+    # If the email already exists, insert_submission returns False and we respond
+    # exactly like a brand-new signup, so this endpoint can't be used to probe which
+    # emails are already registered.
 
     # Remember the choice so the thank-you page can highlight it in the results.
     session["last_poll_answer"] = poll_answer
@@ -441,7 +363,8 @@ def thank_you() -> str:
     """Confirmation page with live poll results, share links, and community link."""
     user_choice = session.pop("last_poll_answer", None)
 
-    counts, total = get_poll_results()
+    counts = db.poll_counts()
+    total = sum(counts.values())
     poll_results = [
         {
             "option": option,
@@ -475,13 +398,7 @@ def thank_you() -> str:
 @require_admin_auth
 def admin_export() -> Response:
     """Download all submissions as CSV (protected by HTTP Basic Auth)."""
-    with get_db_connection() as connection:
-        submissions = connection.execute(
-            """
-            SELECT id, email, poll_answer, created_at, utm_source, utm_medium, utm_campaign, referrer
-            FROM submissions ORDER BY created_at DESC
-            """
-        ).fetchall()
+    submissions = db.all_submissions()
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -643,7 +560,7 @@ def set_security_headers(response: Response) -> Response:
 
 
 if __name__ == "__main__":
-    init_db()
+    db.init_db()
     # Debug is OFF unless explicitly enabled. The debug console exposes an
     # interactive shell (remote code execution) and must never run in production.
     debug = os.environ.get("FLASK_DEBUG", "0") == "1"
@@ -652,4 +569,4 @@ if __name__ == "__main__":
     app.run(host=host, port=port, debug=debug)
 else:
     # Ensures database is ready when run by production servers (waitress, gunicorn).
-    init_db()
+    db.init_db()

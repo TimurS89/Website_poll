@@ -78,6 +78,8 @@ $env:FLASK_DEBUG = "1"; python app.py
 | `FLASK_DEBUG` | `1` enables the dev debug server. Never set in production. |
 | `TRUST_PROXY` | `1` when running behind a reverse proxy (Render/Railway/Nginx) so the real client IP is read from `X-Forwarded-For` for rate limiting. |
 | `SECURE_COOKIES` | `1` to mark the session cookie `Secure` (HTTPS deployments). |
+| `DATABASE_URL` | PostgreSQL connection string (e.g. Neon). When set, the app stores data in Postgres; when unset it uses a local SQLite file. |
+| `DATABASE_PATH` | Override the local SQLite file location (SQLite mode only). |
 | `HOST` / `PORT` | Bind address/port for the dev server (default `127.0.0.1:5000`). |
 
 Generate a secret key:
@@ -134,39 +136,32 @@ Everything in the HTML and the generated share image reads from these values dyn
 
 ## Simple deployment
 
+> **Production needs an external database.** Render/Railway free instances have an
+> **ephemeral filesystem**, so local SQLite data is wiped on every redeploy and idle
+> restart. In production, set `DATABASE_URL` to a PostgreSQL connection string (a free
+> [Neon](https://neon.tech) database works well) so signups are never lost. Production
+> installs `requirements-prod.txt`, which adds the `psycopg` Postgres driver.
+
 ### Render (Web Service)
 
-- Build command:
+The repo ships a `render.yaml` blueprint — fastest path is **New + → Blueprint → pick this repo**, then fill in the prompted secrets. To configure manually instead:
 
-```bash
-pip install -r requirements.txt
-```
-
-- Start command:
-
-```bash
-waitress-serve --host=0.0.0.0 --port=$PORT app:app
-```
-
-- Set root directory to `idea_validator`.
-- In the dashboard, set env vars: `SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `TRUST_PROXY=1`.
+- Root directory: `idea_validator`
+- Build command: `pip install -r requirements-prod.txt`
+- Start command: `waitress-serve --host=0.0.0.0 --port=$PORT app:app`
+- Env vars: `SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `DATABASE_URL` (your Neon string), `TRUST_PROXY=1`, `SECURE_COOKIES=1`, `PYTHON_VERSION=3.12.7`.
 
 ### Railway
 
-- Deploy from repo
-- Set root directory to `idea_validator`
-- Start command:
-
-```bash
-waitress-serve --host=0.0.0.0 --port=$PORT app:app
-```
-
-- Set env vars: `SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `TRUST_PROXY=1`.
+- Deploy from repo, set root directory to `idea_validator`
+- Build command: `pip install -r requirements-prod.txt`
+- Start command: `waitress-serve --host=0.0.0.0 --port=$PORT app:app`
+- Set env vars: `SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `DATABASE_URL`, `TRUST_PROXY=1`, `SECURE_COOKIES=1`.
 
 ## Notes
 
-- SQLite table `submissions` is auto-created if missing.
-- `database.db` is intentionally not committed to git (SQLite is a binary file); it is created automatically on first run.
+- The app uses **SQLite locally** (zero setup) and **PostgreSQL in production** when `DATABASE_URL` is set — the same code path, selected automatically. The `submissions` table is auto-created on startup on either backend.
+- `database.db` (local SQLite) is intentionally not committed to git; it is created automatically on first run.
 - Duplicate emails are blocked (`email` is unique). Re-submitting an existing email returns the same thank-you page rather than revealing that it is already registered (prevents email enumeration).
 - Basic email regex validation is included.
 - Input is normalized and validated server-side.
