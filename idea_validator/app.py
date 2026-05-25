@@ -208,6 +208,26 @@ def get_poll_results() -> tuple[dict[str, int], int]:
     return counts, sum(counts.values())
 
 
+def count_submissions() -> int:
+    """Total real submissions (one row per email)."""
+    with get_db_connection() as connection:
+        row = connection.execute("SELECT COUNT(*) AS count FROM submissions").fetchone()
+    return int(row["count"])
+
+
+def participant_label() -> str:
+    """Social-proof count using the floor model: max(baseline, real signups).
+
+    Reads "1,000+" while the baseline floors the real count, then switches to the
+    exact live number (no "+") once real sign-ups overtake the baseline.
+    """
+    real = count_submissions()
+    baseline = config.PARTICIPANT_BASELINE
+    if real >= baseline:
+        return f"{real:,}"
+    return f"{baseline:,}+"
+
+
 def build_share_links(page_url: str, message: str) -> dict[str, str]:
     """Build pre-filled share-intent URLs (no APIs/keys required).
 
@@ -254,6 +274,12 @@ def csrf_is_valid() -> bool:
 def inject_csrf_token() -> dict[str, str]:
     """Expose {{ csrf_token }} to every template."""
     return {"csrf_token": get_csrf_token()}
+
+
+@app.context_processor
+def inject_participant_label() -> dict[str, str]:
+    """Expose {{ participant_label }} (the social-proof count) to every template."""
+    return {"participant_label": participant_label()}
 
 
 def require_admin_auth(view: Callable[..., Any]) -> Callable[..., Any]:
@@ -433,7 +459,9 @@ def thank_you() -> str:
 
     extra = {
         "poll_results": poll_results,
-        "total_votes": total,
+        # Show the real percentage bars only once there's a meaningful real sample;
+        # the seeded participant counter is never used to compute these percentages.
+        "show_results": total >= config.RESULTS_MIN_VOTES,
         "user_choice": user_choice,
         "share_links": build_share_links(page_url, message),
         "community_url": config.COMMUNITY_URL,
